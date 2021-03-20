@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/muesli/reflow/indent"
 	te "github.com/muesli/termenv"
 )
 
@@ -20,26 +21,24 @@ var (
 	blurredPrompt       = "> "
 	focusedSubmitButton = "[ " + te.String("Submit").Foreground(color("205")).String() + " ]"
 	blurredSubmitButton = "[ " + te.String("Submit").Foreground(color("240")).String() + " ]"
-)
 
-type input struct {
-	keyword  string
-	location string
-}
+	focusedAddButton = "[ " + te.String("Add").Foreground(color("205")).String() + " ]"
+	blurredAddButton = "[ " + te.String("Add").Foreground(color("240")).String() + " ]"
+
+	keyword       textinput.Model
+	location      textinput.Model
+	add           textinput.Model
+	packageInputs = [][]textinput.Model{}
+)
 
 type model struct {
 	index         int
 	keywordInput  textinput.Model
 	locationInput textinput.Model
-	// addButton  string
-	submitButton string
+	addInput      textinput.Model
+	submitButton  string
+	submit        bool
 }
-
-var (
-	keyword  textinput.Model
-	location textinput.Model
-	INPUTS   = [][]textinput.Model{}
-)
 
 func main() {
 	// s := &search{}
@@ -49,7 +48,7 @@ func main() {
 	}
 
 	// fmt.Printf("Inputs here %+v", INPUTS)
-	for _, val := range INPUTS {
+	for _, val := range packageInputs {
 		for i, v := range val {
 			fmt.Println(i, v)
 			fmt.Printf("Index: %d, Value: %+v\n\n", i, v.Value())
@@ -60,18 +59,23 @@ func main() {
 
 func initialModel() model {
 	keyword = textinput.NewModel()
-	keyword.Placeholder = "Keyword"
+	keyword.Placeholder = "Keyword eg: Web Developer"
 	keyword.Focus()
 	keyword.Prompt = focusedPrompt
 	keyword.TextColor = focusedTextColor
 	keyword.CharLimit = 32
 
 	location = textinput.NewModel()
-	location.Placeholder = "Location"
+	location.Placeholder = "Location eg: Boulder CO, Salt Lake City UT"
 	location.Prompt = blurredPrompt
 	location.CharLimit = 64
 
-	return model{0, keyword, location, blurredSubmitButton}
+	add = textinput.NewModel()
+	add.Placeholder = "[Y/n]"
+	add.Prompt = blurredPrompt
+	add.CharLimit = 8
+
+	return model{0, keyword, location, add, blurredSubmitButton, false}
 
 }
 
@@ -80,6 +84,22 @@ func (m model) Init() tea.Cmd {
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Make sure these keys always quit
+	if msg, ok := msg.(tea.KeyMsg); ok {
+		k := msg.String()
+		if k == "q" || k == "esc" || k == "ctrl+c" {
+			return m, tea.Quit
+		}
+	}
+
+	if m.submit == true {
+		m.submit = false
+		return m.UpdateAdd(msg)
+	}
+	return m.UpdateQuery(msg)
+}
+
+func (m model) UpdateAdd(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
@@ -87,12 +107,47 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 
 		case "ctrl+c":
+		case "esc":
 			return m, tea.Quit
 
-		// Cycle between inputs
+		case "Y", "y", "enter":
+			return m, nil
+		}
+	}
+
+	// Handle character input and blinks
+	m, cmd = updateAdd(msg, m)
+
+	return m, cmd
+}
+
+func updateAdd(msg tea.Msg, m model) (model, tea.Cmd) {
+	var (
+		cmd  tea.Cmd
+		cmds []tea.Cmd
+	)
+
+	m.addInput, cmd = m.addInput.Update(msg)
+	cmds = append(cmds, cmd)
+
+	return m, tea.Batch(cmds...)
+}
+
+func (m model) UpdateQuery(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+
+		case "ctrl+c":
+		case "esc":
+			return m, tea.Quit
+
+		// Cycle between input
 		case "tab", "shift+tab", "enter", "up", "down":
 
-			inputs := []textinput.Model{
+			input := []textinput.Model{
 				m.keywordInput,
 				m.locationInput,
 			}
@@ -101,10 +156,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Did the user press enter while the submit button was focused?
 			// If so, exit.
-			if s == "enter" && m.index == len(inputs) {
-
-				INPUTS = append(INPUTS, inputs)
-				return m, tea.Quit
+			if s == "enter" && m.index == len(input) {
+				packageInputs = append(packageInputs, input)
+				m, cmd = updateInputs("", m)
+				initialModel().Init()
 			}
 
 			// Cycle indexes
@@ -114,36 +169,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.index++
 			}
 
-			if m.index > len(inputs) {
+			if m.index > len(input) {
 				m.index = 0
 			} else if m.index < 0 {
-				m.index = len(inputs)
+				m.index = len(input)
 			}
 
-			for i := 0; i <= len(inputs)-1; i++ {
+			for i := 0; i <= len(input)-1; i++ {
 				if i == m.index {
 					// Set focused state
-					inputs[i].Focus()
-					inputs[i].Prompt = focusedPrompt
-					inputs[i].TextColor = focusedTextColor
+					input[i].Focus()
+					input[i].Prompt = focusedPrompt
+					input[i].TextColor = focusedTextColor
 					continue
 				}
 				// Remove focused state
-				inputs[i].Blur()
-				inputs[i].Prompt = blurredPrompt
-				inputs[i].TextColor = ""
+				input[i].Blur()
+				input[i].Prompt = blurredPrompt
+				input[i].TextColor = ""
 			}
 
-			m.keywordInput = inputs[0]
-			m.locationInput = inputs[1]
+			m.keywordInput = input[0]
+			m.locationInput = input[1]
 
-			// if m.index == len(inputs) {
-			// 	m.submitButton = focusedSubmitButton
-			// } else {
-			// 	m.submitButton = blurredSubmitButton
-			// }
-
-			if m.index == len(inputs) {
+			if m.index == len(input) {
 				m.submitButton = focusedSubmitButton
 			} else {
 				m.submitButton = blurredSubmitButton
@@ -178,21 +227,45 @@ func updateInputs(msg tea.Msg, m model) (model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	s := "\n"
+	var s string
 
+	if m.submit == true {
+		s = m.additionalView()
+	} else {
+		s = m.queryView()
+	}
+
+	return indent.String("\n"+s+"\n\n", 2)
+}
+
+func (m model) queryView() string {
+	s := "\n"
 	inputs := []string{
 		m.keywordInput.View(),
 		m.locationInput.View(),
 	}
-
 	for i := 0; i < len(inputs); i++ {
 		s += inputs[i]
 		if i < len(inputs)-1 {
 			s += "\n"
 		}
 	}
-
 	s += "\n\n" + m.submitButton + "\n"
+	return s
+}
 
+func (m model) additionalView() string {
+
+	s := "Add another search item? [Y/n]"
+	inputs := []string{
+		m.addInput.View(),
+	}
+	for i := 0; i < len(inputs); i++ {
+		s += inputs[i]
+		if i < len(inputs)-1 {
+			s += "\n"
+		}
+	}
+	s += "\n\n" + m.submitButton + "\n"
 	return s
 }
