@@ -29,6 +29,7 @@ var (
 	baseurl    = "https://www.indeed.com/jobs?"
 	baselimit  = "&limit=50"
 	maxresults = 100
+	urlSlice   []string
 )
 
 type model struct {
@@ -47,15 +48,25 @@ func main() {
 	for _, val := range packageInputs {
 		url := ""
 		for i, v := range val {
-			fmt.Printf("Index: %d, Value: %+v\n", i, v.Value())
-			if i == 1 {
-				url += "l=" + strings.ReplaceAll(v.Value(), " ", "%2C+")
-			} else {
+			// fmt.Printf("Index: %d, Value: %+v\n", i, v.Value())
+			if i == 0 {
 				url += "q=" + strings.ReplaceAll(v.Value(), " ", "+") + "&"
+			} else {
+				// Keyword can have multiple locations, comma is the delimiter
+				loc := strings.Split(v.Value(), ",")
+				for _, l := range loc {
+					// trim excess space before replacing with urlencoded spaces
+					l = strings.TrimSpace(l)
+					//append to main slice
+					urlSlice = append(urlSlice, baseurl+url+"l="+strings.ReplaceAll(l, " ", "%2C+")+baselimit)
+				}
 			}
 		}
 		url = baseurl + url + baselimit
-		fmt.Println(url)
+	}
+
+	for _, v := range urlSlice {
+		fmt.Println(v)
 	}
 }
 
@@ -175,7 +186,7 @@ func updateInputs(msg tea.Msg, m model) (model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	s := "\nSubmit to start another query\n\nPress Ctrl+c or ESC when finished!\n\n"
+	s := "\nSubmit to submit query.\n\nPress Ctrl+c or ESC to search on Indeed!\n\n"
 
 	inputs := []string{
 		m.keywordInput.View(),
