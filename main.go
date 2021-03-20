@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -24,12 +25,11 @@ var (
 	keyword       textinput.Model
 	location      textinput.Model
 	packageInputs = [][]textinput.Model{}
-)
 
-type input struct {
-	keyword  string
-	location string
-}
+	baseurl    = "https://www.indeed.com/jobs?"
+	baselimit  = "&limit=50"
+	maxresults = 100
+)
 
 type model struct {
 	index         int
@@ -45,9 +45,17 @@ func main() {
 	}
 
 	for _, val := range packageInputs {
+		url := ""
 		for i, v := range val {
 			fmt.Printf("Index: %d, Value: %+v\n", i, v.Value())
+			if i == 1 {
+				url += "l=" + strings.ReplaceAll(v.Value(), " ", "%2C+")
+			} else {
+				url += "q=" + strings.ReplaceAll(v.Value(), " ", "+") + "&"
+			}
 		}
+		url = baseurl + url + baselimit
+		fmt.Println(url)
 	}
 }
 
@@ -85,13 +93,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-
-		// case "ctrl+c", "esc", "shift+enter":
-		// 	return m, tea.Quit
-
 		// Cycle between inputs
 		case "tab", "shift+tab", "enter", "up", "down", "ctrl+j", "ctrl+k":
-
 			input := []textinput.Model{
 				m.keywordInput,
 				m.locationInput,
